@@ -35,4 +35,7 @@ struct mt_credentials* find_user(char *username);
 
 void drop_privileges(char *username);
 
+/* System authentication using PAM */
+int authenticate_system_user(const char *username, const char *password);
+
 #endif

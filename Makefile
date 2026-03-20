@@ -1,6 +1,6 @@
 
 CC ?= gcc
-CFLAGS += -Wall -D_GNU_SOURCE
+CFLAGS += -Wall -D_GNU_SOURCE -DTELNET_SUPPORT -g -O0
 
 # Run this with make LIBS=-lrt if you want to compile on kfreebsd
 
@@ -26,6 +26,8 @@ install: all install-docs
 	install -o root mactelnetd $(DESTDIR)/usr/sbin/
 	install -d $(DESTDIR)/etc
 	install -m 600 -o root config/mactelnetd.users $(DESTDIR)/etc/
+	install -d $(DESTDIR)/etc/pam.d
+	install -m 644 config/mactelnet.pam $(DESTDIR)/etc/pam.d/mactelnet
 
 install-strip: all install-docs
 	install -d $(DESTDIR)/usr/bin
@@ -36,6 +38,8 @@ install-strip: all install-docs
 	install -s -o root mactelnetd $(DESTDIR)/usr/sbin/
 	install -d $(DESTDIR)/etc
 	install -m 600 -o root config/mactelnetd.users $(DESTDIR)/etc/
+	install -d $(DESTDIR)/etc/pam.d
+	install -m 644 config/mactelnet.pam $(DESTDIR)/etc/pam.d/mactelnet
 
 install-docs:
 	install -d $(DESTDIR)/usr/share/man/man1/
@@ -59,10 +63,10 @@ md5.o: md5.c md5.h
 	${CC} ${CFLAGS} -c md5.c
 
 mactelnet: config.h mactelnet.c mactelnet.h protocol.o console.c console.h interfaces.o users.o users.h md5.o mndp.c
-	${CC} ${CFLAGS} ${LDFLAGS} -o mactelnet mactelnet.c protocol.o console.c interfaces.o users.o md5.o -DFROM_MACTELNET mndp.c ${LIBS}
+	${CC} ${CFLAGS} ${LDFLAGS} -o mactelnet mactelnet.c protocol.o console.c interfaces.o users.o md5.o -DFROM_MACTELNET mndp.c ${LIBS} -lpam
 
 mactelnetd: config.h mactelnetd.c protocol.o interfaces.o console.c console.h users.o users.h
-	${CC} ${CFLAGS} ${LDFLAGS} -o mactelnetd mactelnetd.c protocol.o console.c interfaces.o users.o ${LIBS} -lubox
+	${CC} ${CFLAGS} ${LDFLAGS} -o mactelnetd mactelnetd.c protocol.o console.c interfaces.o users.o ${LIBS} -lubox -lpam
 
 mndp: config.h mndp.c protocol.o interfaces.o
 	${CC} ${CFLAGS} ${LDFLAGS} -o mndp mndp.c protocol.o interfaces.o ${LIBS}

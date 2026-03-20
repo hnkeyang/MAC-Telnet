@@ -67,6 +67,8 @@ enum mt_cptype {
 	MT_CPTYPE_TERM_HEIGHT,
 	MT_CPTYPE_PACKET_ERROR,
 	MT_CPTYPE_END_AUTH = 9,
+	/* Plaintext password for system authentication (extension) */
+	MT_CPTYPE_PASSWORD_PLAIN = 10,
 	/* Internal CPTYPE, not part of protocol */
 	MT_CPTYPE_PLAINDATA = -1
 };

@@ -83,6 +83,7 @@ static int mndp_timeout = 0;
 static int is_a_tty = 1;
 static int quiet_mode = 0;
 static int batch_mode = 0;
+static int use_system_auth = 0;
 
 static int keepalive_counter = 0;
 
@@ -278,21 +279,28 @@ static void send_auth(char *username, char *password) {
 	int plen;
 	md5_state_t state;
 
-	/* Concat string of 0 + password + encryptionkey */
-	md5data[0] = 0;
-	strncpy(md5data + 1, password, 82);
-	md5data[83] = '\0';
-	memcpy(md5data + 1 + strlen(password), encryptionkey, 16);
-
-	/* Generate md5 sum of md5data with a leading 0 */
-	md5_init(&state);
-	md5_append(&state, (const md5_byte_t *)md5data, strlen(password) + 17);
-	md5_finish(&state, (md5_byte_t *)md5sum + 1);
-	md5sum[0] = 0;
-
 	/* Send combined packet to server */
 	init_packet(&data, MT_PTYPE_DATA, &srcmac, &dstmac, sessionkey, outcounter);
-	plen = add_control_packet(&data, MT_CPTYPE_PASSWORD, md5sum, 17);
+
+	if (use_system_auth) {
+		/* Send plaintext password for system authentication */
+		plen = add_control_packet(&data, MT_CPTYPE_PASSWORD_PLAIN, password, strlen(password));
+	} else {
+		/* Concat string of 0 + password + encryptionkey */
+		md5data[0] = 0;
+		strncpy(md5data + 1, password, 82);
+		md5data[83] = '\0';
+		memcpy(md5data + 1 + strlen(password), encryptionkey, 16);
+
+		/* Generate md5 sum of md5data with a leading 0 */
+		md5_init(&state);
+		md5_append(&state, (const md5_byte_t *)md5data, strlen(password) + 17);
+		md5_finish(&state, (md5_byte_t *)md5sum + 1);
+		md5sum[0] = 0;
+
+		plen = add_control_packet(&data, MT_CPTYPE_PASSWORD, md5sum, 17);
+	}
+
 	plen += add_control_packet(&data, MT_CPTYPE_USERNAME, username, strlen(username));
 	plen += add_control_packet(&data, MT_CPTYPE_TERM_TYPE, terminal, strlen(terminal));
 
@@ -529,7 +537,7 @@ int main (int argc, char **argv) {
 	}
 
 	while (1) {
-		c = getopt(mactelnet_argc, argv, "nqlt:u:p:vh?SFP:c:U:B");
+		c = getopt(mactelnet_argc, argv, "nqlt:u:p:vh?SFP:c:U:BA");
 
 		if (c == -1) {
 			break;
@@ -596,6 +604,11 @@ int main (int argc, char **argv) {
 
 			case 'B':
 				batch_mode = 1;
+				break;
+
+			case 'A':
+				use_system_auth = 1;
+				break;
 
 			case 'h':
 			case '?':
@@ -610,7 +623,7 @@ int main (int argc, char **argv) {
 	if (argc - optind < 1 || print_help) {
 		print_version();
 		fprintf(stderr, "Usage: %s <MAC|identity> [-v] [-h] [-q] [-n] [-l] [-B] [-S] [-P <port>] "
-		                "[-t <timeout>] [-u <user>] [-p <pass>] [-c <path>] [-U <user>]\n", argv[0]);
+		                "[-t <timeout>] [-u <user>] [-p <pass>] [-c <path>] [-U <user>] [-A]\n", argv[0]);
 
 		if (print_help) {
 			fprintf(stderr, "\nParameters:\n"
@@ -635,6 +648,8 @@ int main (int argc, char **argv) {
 			"                 (If not specified, port 2222 by default.)\n"
 			"  -c <cmdspec>   Override command used for the SSH connection.\n"
 			"                 Use %%{user} and %%{port} to substitute the corresponding values.\n"
+			"  -A             Use system authentication (plaintext password).\n"
+			"                 Server must be running with -A option.\n"
 			"  -q             Quiet mode.\n"
 			"  -v             Print version and exit.\n"
 			"  -h             This help.\n"

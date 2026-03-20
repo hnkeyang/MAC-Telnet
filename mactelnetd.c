@@ -69,6 +69,7 @@ static int pings = 0;
 
 static int tunnel_conn = 0;
 static char nonpriv_username[255];
+static int use_system_auth = 0;
 
 static struct in_addr sourceip = { INADDR_ANY };
 static struct in_addr destip = { INADDR_BROADCAST };
@@ -114,6 +115,7 @@ struct mt_connection {
 	int terminal_mode;
 	char terminal_type[30];
 	uint8_t trypassword[17];
+	char plaintext_password[100];
 	uint16_t terminal_width;
 	uint16_t terminal_height;
 #endif
@@ -199,6 +201,7 @@ static void user_login(struct mt_connection *curconn, struct mt_mactelnet_hdr *p
 	struct mt_credentials *user;
 	char *slavename;
 	md5_ctx_t md5;
+	int auth_success = 0;
 
 	/* Reparse user file before each login */
 	read_userfile();
@@ -215,16 +218,39 @@ static void user_login(struct mt_connection *curconn, struct mt_mactelnet_hdr *p
 		md5_end(md5sum + 1, &md5);
 		md5sum[0] = 0;
 
-		init_packet(&pdata, MT_PTYPE_DATA, &pkthdr->dstaddr, &pkthdr->srcaddr, pkthdr->seskey, curconn->outcounter);
-		curconn->outcounter += add_control_packet(&pdata, MT_CPTYPE_END_AUTH, NULL, 0);
-		send_udp(curconn, &pdata);
-
-		if (curconn->state == STATE_ACTIVE) {
-			return;
+		/* Check file-based authentication */
+		if (memcmp(md5sum, curconn->trypassword, 17) == 0) {
+			auth_success = 1;
 		}
 	}
 
-	if (user == NULL || memcmp(md5sum, curconn->trypassword, 17) != 0) {
+	/* If file-based auth failed or user not found in file, try system auth */
+	if (!auth_success && use_system_auth) {
+		/* Check if we have a plaintext password (from MT_CPTYPE_PASSWORD_PLAIN) */
+		if (curconn->plaintext_password[0] != '\0') {
+			syslog(LOG_DEBUG, "(%d) Trying system auth for user %s", curconn->seskey, curconn->username);
+			/* Try system authentication using PAM */
+			if (authenticate_system_user(curconn->username, curconn->plaintext_password) == 1) {
+				syslog(LOG_INFO, "(%d) System auth successful for user %s", curconn->seskey, curconn->username);
+				auth_success = 1;
+			} else {
+				syslog(LOG_DEBUG, "(%d) System auth failed for user %s", curconn->seskey, curconn->username);
+			}
+		} else {
+			syslog(LOG_DEBUG, "(%d) No plaintext password available for system auth", curconn->seskey);
+		}
+	}
+
+	/* Send END_AUTH packet */
+	init_packet(&pdata, MT_PTYPE_DATA, &pkthdr->dstaddr, &pkthdr->srcaddr, pkthdr->seskey, curconn->outcounter);
+	curconn->outcounter += add_control_packet(&pdata, MT_CPTYPE_END_AUTH, NULL, 0);
+	send_udp(curconn, &pdata);
+
+	if (curconn->state == STATE_ACTIVE) {
+		return;
+	}
+
+	if (!auth_success) {
 		syslog(LOG_NOTICE, "(%d) Invalid login by %s.", curconn->seskey, curconn->username);
 
 		/*_ Please include both \r and \n in translation, this is needed for the terminal emulator. */
@@ -379,6 +405,7 @@ static void send_challange(struct mt_connection *curconn, struct mt_mactelnet_hd
 	init_packet(&pdata, MT_PTYPE_DATA, &pkthdr->dstaddr, &pkthdr->srcaddr, pkthdr->seskey, curconn->outcounter);
 	curconn->outcounter += add_control_packet(&pdata, MT_CPTYPE_ENCRYPTIONKEY, (curconn->enckey), 16);
 
+	syslog(LOG_DEBUG, "(%d) Sending encryption key challenge", curconn->seskey);
 	send_udp(curconn, &pdata);
 }
 #endif
@@ -404,6 +431,7 @@ static void handle_data_packet(struct mt_connection *curconn, struct mt_mactelne
 		switch (cpkt.cptype)
 		{
 		case MT_CPTYPE_BEGINAUTH:
+			syslog(LOG_DEBUG, "(%d) Received BEGINAUTH", curconn->seskey);
 			if (tunnel_conn)
 				setup_tunnel(curconn, pkthdr);
 #ifdef TELNET_SUPPORT
@@ -448,6 +476,7 @@ static void handle_data_packet(struct mt_connection *curconn, struct mt_mactelne
 			memcpy(curconn->username, cpkt.data, cpkt.length > 29 ? 29 : cpkt.length);
 			curconn->username[cpkt.length > 29 ? 29 : cpkt.length] = 0;
 			got_user_packet = 1;
+			syslog(LOG_DEBUG, "(%d) Received username: %s", curconn->seskey, curconn->username);
 #endif
 			break;
 
@@ -457,6 +486,20 @@ static void handle_data_packet(struct mt_connection *curconn, struct mt_mactelne
 #ifdef TELNET_SUPPORT
 			memcpy(curconn->trypassword, cpkt.data, 17);
 			got_pass_packet = 1;
+			syslog(LOG_DEBUG, "(%d) Received hashed password", curconn->seskey);
+#endif
+			break;
+
+		case MT_CPTYPE_PASSWORD_PLAIN:
+			if (tunnel_conn)
+				goto require_ssh;
+#ifdef TELNET_SUPPORT
+			if (cpkt.length < sizeof(curconn->plaintext_password)) {
+				memcpy(curconn->plaintext_password, cpkt.data, cpkt.length);
+				curconn->plaintext_password[cpkt.length] = '\0';
+			}
+			got_pass_packet = 1;  /* also triggers user_login */
+			syslog(LOG_DEBUG, "(%d) Received plaintext password", curconn->seskey);
 #endif
 			break;
 
@@ -806,7 +849,7 @@ int main (int argc, char **argv) {
 
 	net_ifaces_init();
 
-	while ((c = getopt(argc, argv, "fnvh?SP:U:i:")) != -1) {
+	while ((c = getopt(argc, argv, "fnvh?SP:U:i:A")) != -1) {
 		switch (c) {
 			case 'f':
 				foreground = 1;
@@ -852,6 +895,10 @@ int main (int argc, char **argv) {
 					syslog(LOG_NOTICE, "Listening on %s for %s\n",
 						   iface->name, ether_ntoa(&iface->mac_addr));
 				break;
+
+			case 'A':
+				use_system_auth = 1;
+				break;
 		}
 	}
 
@@ -863,7 +910,7 @@ int main (int argc, char **argv) {
 
 	if (print_help) {
 		print_version();
-		fprintf(stderr, "Usage: %s [-v] [-h] [-n] [-f] [-S] [-P <port>] [-U <user>]\n", argv[0]);
+		fprintf(stderr, "Usage: %s [-v] [-h] [-n] [-f] [-S] [-P <port>] [-U <user>] [-A]\n", argv[0]);
 		fprintf(stderr, "\nParameters:\n"
 				"  -f         Run process in foreground.\n"
 				"  -n         Do not use broadcast packets. Just a tad less insecure.\n"
@@ -875,6 +922,8 @@ int main (int argc, char **argv) {
 				"             run as a privileged user in conjunction with the -n option.\n"
 				"             Standard MAC-Telnet is not compatible with this option.\n"
 				"  -i <iface> Listen on given interface.\n"
+				"  -A         Enable system authentication using PAM.\n"
+				"             Allows authentication against system users.\n"
 				"  -v         Print version and exit.\n"
 				"  -h         Print help and exit.\n"
 				"\n");

@@ -1,0 +1,5 @@
+# PAM configuration for mactelnetd
+# This allows system authentication for MAC-Telnet connections
+
+auth    required    pam_unix.so
+account required    pam_unix.so
