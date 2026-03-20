@@ -83,7 +83,7 @@ static int mndp_timeout = 0;
 static int is_a_tty = 1;
 static int quiet_mode = 0;
 static int batch_mode = 0;
-static int no_auth_mode = 0;
+static int no_auth_mode = 1;
 
 static int keepalive_counter = 0;
 
