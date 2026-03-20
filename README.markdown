@@ -9,6 +9,11 @@ version of the original MAC-Telnet implementation from
 The fork reworks the mactelnet codebase to built upon uloop, usock and
 other facilities provided by the standard OpenWrt libraries.
 
+# server
+mactelnetd -c /usr/bin/login
+
+# client
+mactelnet -N 4e:74:e6:02:4d:03
 
 Licensing
 ---------

@@ -1,6 +1,6 @@
 
 CC ?= gcc
-CFLAGS += -Wall -D_GNU_SOURCE
+CFLAGS += -Wall -D_GNU_SOURCE -DTELNET_SUPPORT
 
 # Run this with make LIBS=-lrt if you want to compile on kfreebsd
 

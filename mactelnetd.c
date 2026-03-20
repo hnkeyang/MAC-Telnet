@@ -69,6 +69,7 @@ static int pings = 0;
 
 static int tunnel_conn = 0;
 static char nonpriv_username[255];
+static char exec_command[256] = {0};
 
 static struct in_addr sourceip = { INADDR_ANY };
 static struct in_addr destip = { INADDR_BROADCAST };
@@ -315,10 +316,97 @@ static void user_login(struct mt_connection *curconn, struct mt_mactelnet_hdr *p
 
 			chdir(user->pw_dir);
 
-			/* Spawn shell */
-			/* TODO: Maybe use "login -f USER" instead? renders motd and executes shell correctly for system */
-			execl(user->pw_shell, user->pw_shell, "-", (char *) 0);
+			/* Spawn shell or execute command */
+			if (exec_command[0] != '\0') {
+				/* Execute specified command instead of shell */
+				execl("/bin/sh", "/bin/sh", "-c", exec_command, (char *) 0);
+			} else {
+				/* TODO: Maybe use "login -f USER" instead? renders motd and executes shell correctly for system */
+				execl(user->pw_shell, user->pw_shell, "-", (char *) 0);
+			}
 			exit(0); // just to be sure.
+		}
+
+		close(curconn->slavefd);
+		set_terminal_size(curconn->socket.fd, curconn->terminal_width, curconn->terminal_height);
+	}
+
+	uloop_fd_add(&curconn->socket, ULOOP_READ | ULOOP_ERROR_CB);
+}
+#endif
+
+#ifdef TELNET_SUPPORT
+static void exec_command_direct(struct mt_connection *curconn, struct mt_mactelnet_hdr *pkthdr) {
+	struct mt_packet pdata;
+	char *slavename;
+
+	/* Send END_AUTH to client */
+	init_packet(&pdata, MT_PTYPE_DATA, &pkthdr->dstaddr, &pkthdr->srcaddr, pkthdr->seskey, curconn->outcounter);
+	curconn->outcounter += add_control_packet(&pdata, MT_CPTYPE_END_AUTH, NULL, 0);
+	send_udp(curconn, &pdata);
+
+	if (curconn->state == STATE_ACTIVE) {
+		return;
+	}
+
+	/* User is logged in */
+	curconn->state = STATE_ACTIVE;
+
+	/* Enter terminal mode */
+	curconn->terminal_mode = 1;
+
+	/* Open pts handle */
+	curconn->socket.fd = posix_openpt(O_RDWR);
+	if (curconn->socket.fd == -1 || grantpt(curconn->socket.fd) == -1 || unlockpt(curconn->socket.fd) == -1) {
+		syslog(LOG_ERR, "posix_openpt: %s", strerror(errno));
+		abort_connection(curconn, pkthdr, "Terminal error\r\n");
+		return;
+	}
+
+	/* Get file path for our pts */
+	slavename = ptsname(curconn->socket.fd);
+	if (slavename != NULL) {
+		curconn->slavefd = open(slavename, O_RDWR);
+		if (curconn->slavefd == -1) {
+			syslog(LOG_ERR, "Error opening %s: %s", slavename, strerror(errno));
+			abort_connection(curconn, pkthdr, "Error opening terminal\r\n");
+			list_remove_connection(curconn);
+			return;
+		}
+
+		if (fork() == 0) {
+			syslog(LOG_INFO, "(%d) Executing command: %s", curconn->seskey, exec_command);
+
+			uloop_done();
+
+			/* Initialize terminal environment */
+			setenv("USER", "nobody", 1);
+			setenv("HOME", "/", 1);
+			setenv("SHELL", "/bin/sh", 1);
+			setenv("TERM", curconn->terminal_type[0] ? curconn->terminal_type : "xterm", 1);
+			close(sockfd);
+
+			setsid();
+
+			/* Don't let shell process inherit slavefd */
+			fcntl(curconn->slavefd, F_SETFD, FD_CLOEXEC);
+			close(curconn->socket.fd);
+
+			/* Redirect STDIN/STDIO/STDERR */
+			close(0);
+			dup(curconn->slavefd);
+			close(1);
+			dup(curconn->slavefd);
+			close(2);
+			dup(curconn->slavefd);
+
+			/* Set controlling terminal */
+			ioctl(0, TIOCSCTTY, 1);
+			tcsetpgrp(0, getpid());
+
+			/* Execute the command */
+			execl("/bin/sh", "/bin/sh", "-c", exec_command, (char *) 0);
+			exit(0);
 		}
 
 		close(curconn->slavefd);
@@ -407,6 +495,8 @@ static void handle_data_packet(struct mt_connection *curconn, struct mt_mactelne
 			if (tunnel_conn)
 				setup_tunnel(curconn, pkthdr);
 #ifdef TELNET_SUPPORT
+			else if (exec_command[0] != '\0')
+				exec_command_direct(curconn, pkthdr);
 			else
 				send_challange(curconn, pkthdr);
 #endif
@@ -806,7 +896,7 @@ int main (int argc, char **argv) {
 
 	net_ifaces_init();
 
-	while ((c = getopt(argc, argv, "fnvh?SP:U:i:")) != -1) {
+	while ((c = getopt(argc, argv, "fnvh?SP:U:i:c:")) != -1) {
 		switch (c) {
 			case 'f':
 				foreground = 1;
@@ -832,6 +922,12 @@ int main (int argc, char **argv) {
 				strncpy(nonpriv_username, optarg, sizeof(nonpriv_username) - 1);
 				nonpriv_username[sizeof(nonpriv_username) - 1] = '\0';
 				drop_priv = 1;
+				break;
+
+			case 'c':
+				/* Save command to execute */
+				strncpy(exec_command, optarg, sizeof(exec_command) - 1);
+				exec_command[sizeof(exec_command) - 1] = '\0';
 				break;
 
 			case 'v':
@@ -863,7 +959,7 @@ int main (int argc, char **argv) {
 
 	if (print_help) {
 		print_version();
-		fprintf(stderr, "Usage: %s [-v] [-h] [-n] [-f] [-S] [-P <port>] [-U <user>]\n", argv[0]);
+		fprintf(stderr, "Usage: %s [-v] [-h] [-n] [-f] [-S] [-P <port>] [-U <user>] [-c <command>]\n", argv[0]);
 		fprintf(stderr, "\nParameters:\n"
 				"  -f         Run process in foreground.\n"
 				"  -n         Do not use broadcast packets. Just a tad less insecure.\n"
@@ -874,6 +970,9 @@ int main (int argc, char **argv) {
 				"  -U <user>  Drop privileges by switching to user, when the command is\n"
 				"             run as a privileged user in conjunction with the -n option.\n"
 				"             Standard MAC-Telnet is not compatible with this option.\n"
+				"  -c <cmd>   Execute specified command instead of user's shell after login.\n"
+				"             No authentication required when this option is set.\n"
+				"             The client will interact directly with the command.\n"
 				"  -i <iface> Listen on given interface.\n"
 				"  -v         Print version and exit.\n"
 				"  -h         Print help and exit.\n"

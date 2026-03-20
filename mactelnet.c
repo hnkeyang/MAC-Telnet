@@ -83,6 +83,7 @@ static int mndp_timeout = 0;
 static int is_a_tty = 1;
 static int quiet_mode = 0;
 static int batch_mode = 0;
+static int no_auth_mode = 0;
 
 static int keepalive_counter = 0;
 
@@ -394,7 +395,7 @@ static int handle_packet(struct mt_mactelnet_hdr *pkt, int data_len) {
 			   terminal data may arrive, so we set up the terminal to raw mode. */
 			else if (!tunnel_conn && cpkt.cptype == MT_CPTYPE_END_AUTH) {
 
-				if (!sent_auth) {
+				if (!sent_auth && !no_auth_mode) {
 					fprintf(stderr, "Server %s does not seem to use MAC-Telnet Protocol. Please Try using MAC-SSH instead.\n", ether_ntoa(&dstmac));
 					exit(1);
 				}
@@ -529,7 +530,7 @@ int main (int argc, char **argv) {
 	}
 
 	while (1) {
-		c = getopt(mactelnet_argc, argv, "nqlt:u:p:vh?SFP:c:U:B");
+		c = getopt(mactelnet_argc, argv, "nqlt:u:p:vh?SFP:c:U:BN");
 
 		if (c == -1) {
 			break;
@@ -596,6 +597,11 @@ int main (int argc, char **argv) {
 
 			case 'B':
 				batch_mode = 1;
+				break;
+
+			case 'N':
+				no_auth_mode = 1;
+				break;
 
 			case 'h':
 			case '?':
@@ -610,7 +616,7 @@ int main (int argc, char **argv) {
 	if (argc - optind < 1 || print_help) {
 		print_version();
 		fprintf(stderr, "Usage: %s <MAC|identity> [-v] [-h] [-q] [-n] [-l] [-B] [-S] [-P <port>] "
-		                "[-t <timeout>] [-u <user>] [-p <pass>] [-c <path>] [-U <user>]\n", argv[0]);
+		                "[-t <timeout>] [-u <user>] [-p <pass>] [-c <path>] [-U <user>] [-N]\n", argv[0]);
 
 		if (print_help) {
 			fprintf(stderr, "\nParameters:\n"
@@ -627,6 +633,8 @@ int main (int argc, char **argv) {
 			"  -p <password>  Specify password on command line.\n"
 			"  -U <user>      Drop privileges to this user. Used in conjunction with -n\n"
 			"                 for security.\n"
+			"  -N             No authentication mode. Skip username/password prompts.\n"
+			"                 For use with servers running with -c option.\n"
 			"  -S             Use MAC-SSH instead of MAC-Telnet. (Implies -F)\n"
 			"                 Forward SSH connection through MAC-Telnet and launch SSH client.\n"
 			"  -F             Forward connection through of MAC-Telnet without launching the \n"
@@ -689,7 +697,7 @@ int main (int argc, char **argv) {
 		return 1;
 	}
 
-	if (!tunnel_conn && !username[0]) {
+	if (!tunnel_conn && !no_auth_mode && !username[0]) {
 		if (!quiet_mode) {
 			printf("Login: ");
 			fflush(stdout);
@@ -697,7 +705,7 @@ int main (int argc, char **argv) {
 		scanf("%254s", username);
 	}
 
-	if (!tunnel_conn && !password[0]) {
+	if (!tunnel_conn && !no_auth_mode && !password[0]) {
 		char *tmp = getpass(quiet_mode ? "" : "Password: ");
 		strncpy(password, tmp, sizeof(password) - 1);
 		password[sizeof(password) - 1] = '\0';
