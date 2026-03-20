@@ -44,6 +44,7 @@ struct net_interface *net_ifaces_add(const char *ifname);
 struct net_interface *net_ifaces_lookup(const struct ether_addr *mac);
 void net_ifaces_finish(void);
 void net_ifaces_all(void);
+void net_ifaces_add_all(void);
 
 int net_recv_packet(int fd, struct mt_mactelnet_hdr *h, struct sockaddr_in *s);
 

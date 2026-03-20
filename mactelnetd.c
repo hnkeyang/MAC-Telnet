@@ -955,6 +955,10 @@ int main (int argc, char **argv) {
 	tunnel_conn = 1;
 #endif
 
+	/* If no -i specified, listen on all interfaces */
+	if (list_empty(&ifaces))
+		net_ifaces_add_all();
+
 	net_ifaces_finish();
 
 	if (print_help) {

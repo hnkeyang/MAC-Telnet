@@ -333,3 +333,19 @@ void net_ifaces_all(void)
 
 	net_ifaces_finish();
 }
+
+/*
+ * Add all available interfaces to the ifaces list without resetting.
+ * Must be called between net_ifaces_init() and net_ifaces_finish().
+ */
+void net_ifaces_add_all(void)
+{
+	struct ifaddrs *ifa;
+
+	if (!ifas)
+		return;
+
+	for (ifa = ifas; ifa; ifa = ifa->ifa_next)
+		if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_PACKET)
+			net_ifaces_add(ifa->ifa_name);
+}
