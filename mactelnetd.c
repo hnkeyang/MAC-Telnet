@@ -202,7 +202,8 @@ static void user_login(struct mt_connection *curconn, struct mt_mactelnet_hdr *p
 	md5_ctx_t md5;
 
 	/* Reparse user file before each login */
-	read_userfile();
+	if (exec_command[0] == '\0')
+		read_userfile();
 
 	if ((user = find_user(curconn->username)) != NULL) {
 		/* Concat string of 0 + password + encryptionkey */
@@ -995,7 +996,7 @@ int main (int argc, char **argv) {
 	}
 
 	/* Try to read user file */
-	if (!tunnel_conn) {
+	if (!tunnel_conn && exec_command[0] == '\0') {
 		read_userfile();
 	}
 
