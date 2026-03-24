@@ -248,7 +248,7 @@ static int send_udp(struct mt_packet *packet, int retransmit) {
 			/* Wait for data or timeout */
 			reads = select(insockfd + 1, &read_fds, NULL, NULL, &timeout);
 			if (reads && FD_ISSET(insockfd, &read_fds)) {
-				int result = net_recv_packet(insockfd, &hdr, NULL);
+				int result = net_recv_packet(insockfd, &hdr, NULL, NULL);
 
 				/* Handle incoming packets, waiting for an ack */
 				if (result > 0 && handle_packet(&hdr, result) == MT_PTYPE_ACK)
@@ -832,7 +832,7 @@ int main (int argc, char **argv) {
 		return 1;
 	}
 
-	if (!find_interface() || (result = net_recv_packet(insockfd, &hdr, NULL)) < 1) {
+	if (!find_interface() || (result = net_recv_packet(insockfd, &hdr, NULL, NULL)) < 1) {
 		fprintf(stderr, "Connection failed.\n");
 		return 1;
 	}
@@ -878,7 +878,7 @@ int main (int argc, char **argv) {
 		if (reads > 0) {
 			/* Handle data from server */
 			if (FD_ISSET(insockfd, &read_fds)) {
-				result = net_recv_packet(insockfd, &hdr, NULL);
+				result = net_recv_packet(insockfd, &hdr, NULL, NULL);
 
 				if (result > 0)
 					handle_packet(&hdr, result);
