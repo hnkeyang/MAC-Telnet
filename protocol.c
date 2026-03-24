@@ -383,6 +383,14 @@ struct mt_mndp_info *parse_mndp(const uint8_t *data, const int packet_len) {
 				memcpy(packet.softid, p, len);
 				packet.softid[len] = '\0';
 				break;
+			case MT_MNDPTYPE_IFNAME:
+				if (len > MT_MNDP_MAX_STRING_LENGTH) {
+					len = MT_MNDP_MAX_STRING_LENGTH;
+				}
+
+				memcpy(packet.ifname, p, len);
+				packet.ifname[len] = '\0';
+				break;
 
 			/*default:
 				 Unhandled MNDP type

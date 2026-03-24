@@ -102,7 +102,7 @@ int mndp(int timeout, int batch_mode)  {
 	if (batch_mode) {
 		printf("%s\n", "MAC-Address,Identity,Platform,Version,Hardware,Uptime,Softid,Ifname");
 	} else {
-		printf("\n\E[1m%-17s %s\E[m\n", "MAC-Address", "Identity (platform version hardware) uptime");
+		printf("\n\E[1m%-17s %s\E[m\n", "MAC-Address", "Identity (platform version hardware) uptime interface");
 	}
 #ifdef FROM_MACTELNET
 	if (timeout > 0) {
@@ -132,10 +132,9 @@ int mndp(int timeout, int batch_mode)  {
 				printf("  %s", packet->softid);
 			}
 			if (packet->uptime > 0) {
-				printf("  up %d days %d hours", packet->uptime / 86400, packet->uptime % 86400 / 3600);
-			}
-			if (packet->softid != NULL) {
-				printf("  %s", packet->softid);
+				printf("  up %d days %02d:%02d:%02d", 
+					packet->uptime / 86400, packet->uptime % 86400 / 3600, 
+					packet->uptime % 3600 / 60, packet->uptime % 60);
 			}
 			if (packet->ifname != NULL) {
 				printf(" %s", packet->ifname);
