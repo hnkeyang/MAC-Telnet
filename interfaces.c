@@ -25,7 +25,6 @@
 #include <sys/types.h>
 #include <ifaddrs.h>
 #include <netinet/ip.h>
-#include <netinet/in.h>
 #include <netinet/udp.h>
 #include <netinet/ether.h>
 #include <arpa/inet.h>
@@ -211,45 +210,18 @@ int net_send_udp(const int fd, struct net_interface *interface, const struct eth
 	return send_result - 8 - 14 - 20;
 }
 
-int net_recv_packet(int fd, struct mt_mactelnet_hdr *h, struct sockaddr_in *s, int *in_ifindex)
+int net_recv_packet(int fd, struct mt_mactelnet_hdr *h, struct sockaddr_in *s)
 {
 	int result;
-	struct iovec iov = { packetbuf, sizeof(packetbuf) };
-	uint8_t cmsgbuf[CMSG_SPACE(sizeof(struct in_pktinfo))];
-	struct msghdr msg = {
-		.msg_name    = s,
-		.msg_namelen = s ? sizeof(*s) : 0,
-		.msg_iov     = &iov,
-		.msg_iovlen  = 1,
-		.msg_control = cmsgbuf,
-		.msg_controllen = sizeof(cmsgbuf),
-	};
-	struct cmsghdr *cmsg;
-
-	if (in_ifindex)
-		*in_ifindex = 0;
+	uint32_t slen = s ? sizeof(*s) : 0;
 
 	memset(packetbuf, 0, sizeof(packetbuf));
 
-	result = recvmsg(fd, &msg, 0);
+	result = recvfrom(fd, packetbuf, sizeof(packetbuf), 0,
+	                  (struct sockaddr *)s, &slen);
 
-	if (result > 0) {
-		if (h)
-			parse_packet(packetbuf, h);
-
-		if (in_ifindex) {
-			for (cmsg = CMSG_FIRSTHDR(&msg); cmsg;
-			     cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-				if (cmsg->cmsg_level == IPPROTO_IP &&
-				    cmsg->cmsg_type  == IP_PKTINFO) {
-					struct in_pktinfo *pi =
-						(struct in_pktinfo *)CMSG_DATA(cmsg);
-					*in_ifindex = pi->ipi_ifindex;
-					break;
-				}
-			}
-		}
-	}
+	if (result > 0 && h)
+		parse_packet(packetbuf, h);
 
 	return result;
 }
@@ -339,38 +311,6 @@ net_ifaces_lookup(const struct ether_addr *mac)
 			return iface;
 
 	return NULL;
-}
-
-/*
- * Lookup by MAC address and incoming interface index.
- *
- * When multiple interfaces share the same MAC (e.g. lan1/lan2/lan3 on
- * MT7621 with no IP), we can distinguish them via the ifindex reported
- * by IP_PKTINFO on the receiving UDP socket.  Try MAC+ifindex first;
- * if no exact match is found (ifindex==0 or not in list), fall back to
- * MAC-only so existing behaviour is preserved.
- */
-struct net_interface *
-net_ifaces_lookup_ifindex(const struct ether_addr *mac, int ifindex)
-{
-	struct net_interface *iface;
-	struct net_interface *mac_match = NULL;
-
-	list_for_each_entry(iface, &ifaces, list)
-	{
-		if (memcmp(&iface->mac_addr, mac, sizeof(iface->mac_addr)) != 0)
-			continue;
-
-		/* Record first MAC-only match as fallback. */
-		if (!mac_match)
-			mac_match = iface;
-
-		/* Exact match on both MAC and ifindex. */
-		if (ifindex && iface->ifindex == ifindex)
-			return iface;
-	}
-
-	return mac_match;
 }
 
 void net_ifaces_finish(void)

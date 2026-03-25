@@ -588,13 +588,13 @@ require_ssh:
 static void recv_bulk(struct uloop_fd *ufd, uint32_t ev);
 static void timeout_session(struct uloop_timeout *utm);
 
-static void handle_packet(struct mt_mactelnet_hdr *pkt, struct sockaddr_in *src, int data_len, int in_ifindex) {
+static void handle_packet(struct mt_mactelnet_hdr *pkt, struct sockaddr_in *src, int data_len) {
 	struct mt_connection *curconn = NULL;
 	struct mt_packet pdata;
 	struct net_interface *iface;
 
 	/* Drop packets not belonging to us */
-	if ((iface = net_ifaces_lookup_ifindex(&pkt->dstaddr, in_ifindex)) == NULL)
+	if ((iface = net_ifaces_lookup(&pkt->dstaddr)) == NULL)
 		return;
 
 	switch (pkt->ptype)
@@ -806,19 +806,18 @@ static void recv_telnet(struct uloop_fd *ufd, uint32_t ev)
 {
 	struct sockaddr_in src = { };
 	struct mt_mactelnet_hdr hdr = { };
-	int in_ifindex = 0;
 
-	int len = net_recv_packet(ufd->fd, &hdr, &src, &in_ifindex);
+	int len = net_recv_packet(ufd->fd, &hdr, &src);
 
 	if (len <= 0)
 		return;
 
-	handle_packet(&hdr, &src, len, in_ifindex);
+	handle_packet(&hdr, &src, len);
 }
 
 static void recv_mndp(struct uloop_fd *ufd, uint32_t ev)
 {
-	int len = net_recv_packet(ufd->fd, NULL, NULL, NULL);
+	int len = net_recv_packet(ufd->fd, NULL, NULL);
 
 	if (len != 4)
 		return;
@@ -1028,15 +1027,6 @@ int main (int argc, char **argv) {
 		return 1;
 	} else {
 		syslog(LOG_NOTICE, "Bound to 0.0.0.0:%s", port);
-	}
-
-	/* Enable IP_PKTINFO so recvmsg can report which interface each packet
-	 * arrived on.  This allows net_ifaces_lookup_ifindex() to distinguish
-	 * interfaces that share the same MAC address (e.g. lan1/lan2/lan3). */
-	{
-		int one = 1;
-		if (setsockopt(insock.fd, IPPROTO_IP, IP_PKTINFO, &one, sizeof(one)) < 0)
-			syslog(LOG_WARNING, "setsockopt IP_PKTINFO: %s", strerror(errno));
 	}
 
 	/* Receive mndp udp packets with this socket */
