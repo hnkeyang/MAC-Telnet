@@ -80,7 +80,10 @@ enum mt_mndp_attrtype {
 	MT_MNDPTYPE_TIMESTAMP = 0x000a,
 	MT_MNDPTYPE_SOFTID    = 0x000b,
 	MT_MNDPTYPE_HARDWARE  = 0x000c,
-	MT_MNDPTYPE_IFNAME    = 0x0010
+	MT_MNDPTYPE_IFNAME    = 0x0010,
+	MT_MNDPTYPE_IPV4      = 0x0011,
+	MT_MNDPTYPE_IPV6_LOCAL   = 0x0012,
+	MT_MNDPTYPE_IPV6_GLOBAL  = 0x0013,
 };
 
 /* MNDP packet header */
@@ -118,6 +121,12 @@ struct mt_mndp_info {
 	char softid[MT_MNDP_MAX_STRING_LENGTH];
 	char ifname[MT_MNDP_MAX_STRING_LENGTH];
 	uint32_t uptime;
+	struct in_addr ipv4_addr;
+	struct in6_addr ipv6_local;
+	struct in6_addr ipv6_global;
+	uint8_t has_ipv4;
+	uint8_t has_ipv6_local;
+	uint8_t has_ipv6_global;
 };
 
 struct mt_packet {

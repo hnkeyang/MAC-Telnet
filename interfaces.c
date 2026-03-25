@@ -286,6 +286,28 @@ net_ifaces_add(const char *ifname)
 					~sin->sin_addr.s_addr;
 			}
 			break;
+
+		case AF_INET6:
+			{
+				struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
+				struct in6_addr *addr = &sin6->sin6_addr;
+
+				/* Check for link-local address (fe80::/10) */
+				if ((addr->s6_addr[0] & 0xfe) == 0xfe && (addr->s6_addr[1] & 0xc0) == 0x80) {
+					if (!iface->has_ipv6_local) {
+						memcpy(&iface->ipv6_local, addr, sizeof(struct in6_addr));
+						iface->has_ipv6_local = 1;
+					}
+				}
+				/* Check for global unicast address (2000::/3) */
+				else if ((addr->s6_addr[0] & 0xe0) == 0x20) {
+					if (!iface->has_ipv6_global) {
+						memcpy(&iface->ipv6_global, addr, sizeof(struct in6_addr));
+						iface->has_ipv6_global = 1;
+					}
+				}
+			}
+			break;
 		}
 	}
 
@@ -348,4 +370,84 @@ void net_ifaces_add_all(void)
 	for (ifa = ifas; ifa; ifa = ifa->ifa_next)
 		if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_PACKET)
 			net_ifaces_add(ifa->ifa_name);
+}
+
+/*
+ * Refresh IP addresses for all interfaces in the list.
+ * This should be called periodically to detect IP address changes.
+ */
+void net_ifaces_refresh(void)
+{
+	struct ifaddrs *ifa;
+	struct net_interface *iface;
+	struct sockaddr_in *sin;
+
+	/* Re-read interface addresses */
+	if (ifas)
+		freeifaddrs(ifas);
+
+	if (getifaddrs(&ifas))
+		ifas = NULL;
+
+	if (!ifas)
+		return;
+
+	/* Update IP addresses for each interface in our list */
+	list_for_each_entry(iface, &ifaces, list)
+	{
+		/* Clear old IP addresses */
+		iface->ipv4_addr.s_addr = 0;
+		iface->bcast_addr.s_addr = 0;
+		iface->has_ipv6_local = 0;
+		iface->has_ipv6_global = 0;
+
+		/* Find and update new addresses */
+		for (ifa = ifas; ifa; ifa = ifa->ifa_next)
+		{
+			if (!ifa->ifa_addr || strcmp(ifa->ifa_name, iface->name))
+				continue;
+
+			switch (ifa->ifa_addr->sa_family)
+			{
+			case AF_INET:
+				sin = (struct sockaddr_in *)ifa->ifa_addr;
+				iface->ipv4_addr = sin->sin_addr;
+
+				if (ifa->ifa_broadaddr)
+				{
+					sin = (struct sockaddr_in *)ifa->ifa_broadaddr;
+					iface->bcast_addr = sin->sin_addr;
+				}
+				else if (ifa->ifa_netmask)
+				{
+					sin = (struct sockaddr_in *)ifa->ifa_netmask;
+					iface->bcast_addr.s_addr = iface->ipv4_addr.s_addr |
+						~sin->sin_addr.s_addr;
+				}
+				break;
+
+			case AF_INET6:
+				{
+					struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
+					struct in6_addr *addr = &sin6->sin6_addr;
+
+					/* Check for link-local address (fe80::/10) */
+					if ((addr->s6_addr[0] & 0xfe) == 0xfe && (addr->s6_addr[1] & 0xc0) == 0x80) {
+						if (!iface->has_ipv6_local) {
+							memcpy(&iface->ipv6_local, addr, sizeof(struct in6_addr));
+							iface->has_ipv6_local = 1;
+						}
+					}
+					/* Check for global unicast address (2000::/3) */
+					else if ((addr->s6_addr[0] & 0xe0) == 0x20) {
+						if (!iface->has_ipv6_global) {
+							memcpy(&iface->ipv6_global, addr, sizeof(struct in6_addr));
+							iface->has_ipv6_global = 1;
+						}
+					}
+				}
+				break;
+			}
+		}
+	}
 }

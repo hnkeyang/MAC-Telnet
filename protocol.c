@@ -387,11 +387,32 @@ struct mt_mndp_info *parse_mndp(const uint8_t *data, const int packet_len) {
 				if (len > MT_MNDP_MAX_STRING_LENGTH) {
 					len = MT_MNDP_MAX_STRING_LENGTH;
 				}
-
+		
 				memcpy(packet.ifname, p, len);
 				packet.ifname[len] = '\0';
 				break;
-
+		
+			case MT_MNDPTYPE_IPV4:
+				if (len >= sizeof(struct in_addr)) {
+					memcpy(&packet.ipv4_addr, p, sizeof(struct in_addr));
+					packet.has_ipv4 = 1;
+				}
+				break;
+		
+			case MT_MNDPTYPE_IPV6_LOCAL:
+				if (len >= sizeof(struct in6_addr)) {
+					memcpy(&packet.ipv6_local, p, sizeof(struct in6_addr));
+					packet.has_ipv6_local = 1;
+				}
+				break;
+		
+			case MT_MNDPTYPE_IPV6_GLOBAL:
+				if (len >= sizeof(struct in6_addr)) {
+					memcpy(&packet.ipv6_global, p, sizeof(struct in6_addr));
+					packet.has_ipv6_global = 1;
+				}
+				break;
+		
 			/*default:
 				 Unhandled MNDP type
 			*/

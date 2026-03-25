@@ -719,6 +719,9 @@ void mndp_broadcast(struct uloop_timeout *utm) {
 		return;
 	}
 
+	/* Refresh interface IP addresses before broadcasting */
+	net_ifaces_refresh();
+
 	list_for_each_entry(iface, &ifaces, list)
 	{
 		header = (struct mt_mndp_hdr *)&(pdata.data);
@@ -739,6 +742,20 @@ void mndp_broadcast(struct uloop_timeout *utm) {
 			mndp_add_attribute(&pdata, MT_MNDPTYPE_SOFTID, MT_SOFTID_MACSSH, strlen(MT_SOFTID_MACSSH));
 
 		mndp_add_attribute(&pdata, MT_MNDPTYPE_IFNAME, iface->name, strlen(iface->name));
+
+		/* Add IPv4 address if available */
+		if (iface->ipv4_addr.s_addr != 0) {
+			mndp_add_attribute(&pdata, MT_MNDPTYPE_IPV4, &iface->ipv4_addr, sizeof(iface->ipv4_addr));
+		}
+
+		/* Add IPv6 addresses if available */
+		if (iface->has_ipv6_local) {
+			mndp_add_attribute(&pdata, MT_MNDPTYPE_IPV6_LOCAL, &iface->ipv6_local, sizeof(iface->ipv6_local));
+		}
+		if (iface->has_ipv6_global) {
+			mndp_add_attribute(&pdata, MT_MNDPTYPE_IPV6_GLOBAL, &iface->ipv6_global, sizeof(iface->ipv6_global));
+		}
+
 		header->cksum = in_cksum((uint16_t *)&(pdata.data), pdata.size);
 		send_special_udp(iface, MT_MNDP_PORT, &pdata);
 	}

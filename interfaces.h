@@ -29,6 +29,11 @@ struct net_interface {
 	struct ether_addr mac_addr;
 	int ifindex;
 
+	struct in6_addr ipv6_local;
+	struct in6_addr ipv6_global;
+	uint8_t has_ipv6_local;
+	uint8_t has_ipv6_global;
+
 	struct list_head list;
 };
 
@@ -45,6 +50,7 @@ struct net_interface *net_ifaces_lookup(const struct ether_addr *mac);
 void net_ifaces_finish(void);
 void net_ifaces_all(void);
 void net_ifaces_add_all(void);
+void net_ifaces_refresh(void);
 
 int net_recv_packet(int fd, struct mt_mactelnet_hdr *h, struct sockaddr_in *s);
 

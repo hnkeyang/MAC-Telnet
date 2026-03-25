@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netinet/ether.h>
+#include <netinet/in.h>
 #include <string.h>
 #include "protocol.h"
 #include "config.h"
@@ -100,9 +101,9 @@ int mndp(int timeout, int batch_mode)  {
 	}
 
 	if (batch_mode) {
-		printf("%s\n", "MAC-Address,Identity,Platform,Version,Hardware,Uptime,Softid,Ifname");
+		printf("%s\n", "MAC-Address,Identity,Platform,Version,Hardware,Uptime,Softid,Ifname,IPv4,IPv6-Local,IPv6-Global");
 	} else {
-		printf("\n\E[1m%-17s %s\E[m\n", "MAC-Address", "Identity (platform version hardware) uptime interface");
+		printf("\n\E[1m%-17s %s\E[m\n", "MAC-Address", "Identity (platform version hardware) uptime interface [IPv4] [IPv6-Local] [IPv6-Global]");
 	}
 #ifdef FROM_MACTELNET
 	if (timeout > 0) {
@@ -132,19 +133,53 @@ int mndp(int timeout, int batch_mode)  {
 				printf("  %s", packet->softid);
 			}
 			if (packet->uptime > 0) {
-				printf("  up %d days %02d:%02d:%02d", 
-					packet->uptime / 86400, packet->uptime % 86400 / 3600, 
+				printf("  up %d days %02d:%02d:%02d",
+					packet->uptime / 86400, packet->uptime % 86400 / 3600,
 					packet->uptime % 3600 / 60, packet->uptime % 60);
 			}
 			if (packet->ifname != NULL) {
 				printf(" %s", packet->ifname);
+			}
+			/* Print IP addresses */
+			if (packet->has_ipv4) {
+				printf(" [%s]", inet_ntoa(packet->ipv4_addr));
+			}
+			if (packet->has_ipv6_local) {
+				char ipv6_str[INET6_ADDRSTRLEN];
+				inet_ntop(AF_INET6, &packet->ipv6_local, ipv6_str, sizeof(ipv6_str));
+				printf(" [%s]", ipv6_str);
+			}
+			if (packet->has_ipv6_global) {
+				char ipv6_str[INET6_ADDRSTRLEN];
+				inet_ntop(AF_INET6, &packet->ipv6_global, ipv6_str, sizeof(ipv6_str));
+				printf(" [%s]", ipv6_str);
 			}
 			putchar('\n');
 		} else if (packet != NULL) {
 			/* Print it */
 			printf("'%s','%s',", ether_ntoa(&packet->address), packet->identity);
 			printf("'%s','%s','%s',", packet->platform, packet->version, packet->hardware);
-			printf("'%d','%s','%s'", packet->uptime, packet->softid, packet->ifname);
+			printf("'%d','%s','%s',", packet->uptime, packet->softid, packet->ifname);
+			/* Print IP addresses in batch mode */
+			if (packet->has_ipv4) {
+				printf("'%s',", inet_ntoa(packet->ipv4_addr));
+			} else {
+				printf("','");
+			}
+			if (packet->has_ipv6_local) {
+				char ipv6_str[INET6_ADDRSTRLEN];
+				inet_ntop(AF_INET6, &packet->ipv6_local, ipv6_str, sizeof(ipv6_str));
+				printf("'%s',", ipv6_str);
+			} else {
+				printf("','");
+			}
+			if (packet->has_ipv6_global) {
+				char ipv6_str[INET6_ADDRSTRLEN];
+				inet_ntop(AF_INET6, &packet->ipv6_global, ipv6_str, sizeof(ipv6_str));
+				printf("'%s'", ipv6_str);
+			} else {
+				printf("''");
+			}
 			putchar('\n');
 			fflush(stdout);
 		}
