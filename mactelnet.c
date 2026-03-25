@@ -63,7 +63,7 @@ static uint32_t incounter = 0;
 static int sessionkey = 0;
 static int running = 1;
 
-static uint8_t use_raw_socket = 0;
+static uint8_t use_raw_socket = 1;
 static uint8_t terminal_mode = 0;
 static int tunnel_conn = 0;
 static int launch_ssh = 0;
@@ -530,7 +530,7 @@ int main (int argc, char **argv) {
 	}
 
 	while (1) {
-		c = getopt(mactelnet_argc, argv, "nqlt:u:p:vh?SFP:c:U:BN");
+		c = getopt(mactelnet_argc, argv, "bnqlt:u:p:vh?SFP:c:U:BN");
 
 		if (c == -1) {
 			break;
@@ -538,8 +538,12 @@ int main (int argc, char **argv) {
 
 		switch (c) {
 
+			case 'b':
+				use_raw_socket = 0;
+				break;
+
 			case 'n':
-				use_raw_socket = 1;
+				/* Deprecated: no-broadcast is now the default. Kept for compatibility. */
 				break;
 
 			case 'S':
@@ -615,7 +619,7 @@ int main (int argc, char **argv) {
 	}
 	if (argc - optind < 1 || print_help) {
 		print_version();
-		fprintf(stderr, "Usage: %s <MAC|identity> [-v] [-h] [-q] [-n] [-l] [-B] [-S] [-P <port>] "
+		fprintf(stderr, "Usage: %s <MAC|identity> [-v] [-h] [-q] [-b] [-l] [-B] [-S] [-P <port>] "
 		                "[-t <timeout>] [-u <user>] [-p <pass>] [-c <path>] [-U <user>] [-N]\n", argv[0]);
 
 		if (print_help) {
@@ -626,8 +630,7 @@ int main (int argc, char **argv) {
 			"                 protocol to find it.\n"
 			"  -l             List/Search for routers nearby (MNDP). You may use -t to set timeout.\n"
 			"  -B             Batch mode. Use computer readable output (CSV), for use with -l.\n"
-			"  -n             Do not use broadcast packets. Less insecure but requires\n"
-			"                 root privileges.\n"
+			"  -b             Use broadcast packets instead of raw unicast (requires root if omitted).\n"
 			"  -t <timeout>   Amount of seconds to wait for a response on each interface.\n"
 			"  -u <user>      Specify username on command line.\n"
 			"  -p <password>  Specify password on command line.\n"
@@ -663,7 +666,7 @@ int main (int argc, char **argv) {
 
 	if (use_raw_socket) {
 		if (geteuid() != 0) {
-			fprintf(stderr, "You need to have root privileges to use the -n parameter.\n");
+			fprintf(stderr, "You need to have root privileges for raw socket mode. Use -b to use broadcast instead.\n");
 			return 1;
 		}
 
