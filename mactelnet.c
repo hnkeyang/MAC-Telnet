@@ -83,7 +83,7 @@ static int mndp_timeout = 0;
 static int is_a_tty = 1;
 static int quiet_mode = 0;
 static int batch_mode = 0;
-static int no_auth_mode = 1;
+static int no_auth_mode = 1;  /* default: no-auth (server handles auth via exec_command); -o enables legacy auth */
 
 static int keepalive_counter = 0;
 
@@ -530,7 +530,7 @@ int main (int argc, char **argv) {
 	}
 
 	while (1) {
-		c = getopt(mactelnet_argc, argv, "bnqlt:u:p:vh?SFP:c:U:BN");
+		c = getopt(mactelnet_argc, argv, "bnqlt:u:p:vh?SFP:c:U:BNo");
 
 		if (c == -1) {
 			break;
@@ -607,6 +607,11 @@ int main (int argc, char **argv) {
 				no_auth_mode = 1;
 				break;
 
+			case 'o':
+				/* Enable legacy username/password authentication mode */
+				no_auth_mode = 0;
+				break;
+
 			case 'h':
 			case '?':
 				print_help = 1;
@@ -619,7 +624,7 @@ int main (int argc, char **argv) {
 	}
 	if (argc - optind < 1 || print_help) {
 		print_version();
-		fprintf(stderr, "Usage: %s <MAC|identity> [-v] [-h] [-q] [-b] [-l] [-B] [-S] [-P <port>] "
+		fprintf(stderr, "Usage: %s <MAC|identity> [-v] [-h] [-q] [-b] [-l] [-B] [-o] [-S] [-P <port>] "
 		                "[-t <timeout>] [-u <user>] [-p <pass>] [-c <path>] [-U <user>] [-N]\n", argv[0]);
 
 		if (print_help) {
@@ -636,8 +641,10 @@ int main (int argc, char **argv) {
 			"  -p <password>  Specify password on command line.\n"
 			"  -U <user>      Drop privileges to this user. Used in conjunction with -n\n"
 			"                 for security.\n"
-			"  -N             No authentication mode. Skip username/password prompts.\n"
-			"                 For use with servers running with -c option.\n"
+			"  -N             No authentication mode. Skip username/password prompts (default).\n"
+			"                 For use with servers not running in -o mode.\n"
+			"  -o             Legacy authentication mode. Send username/password to server.\n"
+			"                 Required when connecting to a server running with -o.\n"
 			"  -S             Use MAC-SSH instead of MAC-Telnet. (Implies -F)\n"
 			"                 Forward SSH connection through MAC-Telnet and launch SSH client.\n"
 			"  -F             Forward connection through of MAC-Telnet without launching the \n"

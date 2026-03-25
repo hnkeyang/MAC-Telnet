@@ -68,8 +68,9 @@ static int sockfd;
 static int pings = 0;
 
 static int tunnel_conn = 0;
+static int auth_mode = 0;   /* -o: legacy username/password auth mode */
 static char nonpriv_username[255];
-static char exec_command[256] = {0};
+static char exec_command[256] = "/bin/login";
 
 static struct in_addr sourceip = { INADDR_ANY };
 static struct in_addr destip = { INADDR_BROADCAST };
@@ -201,8 +202,8 @@ static void user_login(struct mt_connection *curconn, struct mt_mactelnet_hdr *p
 	char *slavename;
 	md5_ctx_t md5;
 
-	/* Reparse user file before each login */
-	if (exec_command[0] == '\0')
+	/* Reparse user file before each login (auth_mode only) */
+	if (auth_mode)
 		read_userfile();
 
 	if ((user = find_user(curconn->username)) != NULL) {
@@ -317,14 +318,9 @@ static void user_login(struct mt_connection *curconn, struct mt_mactelnet_hdr *p
 
 			chdir(user->pw_dir);
 
-			/* Spawn shell or execute command */
-			if (exec_command[0] != '\0') {
-				/* Execute specified command instead of shell */
-				execl("/bin/sh", "/bin/sh", "-c", exec_command, (char *) 0);
-			} else {
-				/* TODO: Maybe use "login -f USER" instead? renders motd and executes shell correctly for system */
-				execl(user->pw_shell, user->pw_shell, "-", (char *) 0);
-			}
+			/* Spawn user's shell */
+			/* TODO: Maybe use "login -f USER" instead? renders motd and executes shell correctly for system */
+			execl(user->pw_shell, user->pw_shell, "-", (char *) 0);
 			exit(0); // just to be sure.
 		}
 
@@ -496,10 +492,10 @@ static void handle_data_packet(struct mt_connection *curconn, struct mt_mactelne
 			if (tunnel_conn)
 				setup_tunnel(curconn, pkthdr);
 #ifdef TELNET_SUPPORT
-			else if (exec_command[0] != '\0')
-				exec_command_direct(curconn, pkthdr);
-			else
+			else if (auth_mode)
 				send_challange(curconn, pkthdr);
+			else
+				exec_command_direct(curconn, pkthdr);
 #endif
 			break;
 
@@ -897,7 +893,7 @@ int main (int argc, char **argv) {
 
 	net_ifaces_init();
 
-	while ((c = getopt(argc, argv, "fnvh?SP:U:i:c:")) != -1) {
+	while ((c = getopt(argc, argv, "fnvh?SP:U:i:c:o")) != -1) {
 		switch (c) {
 			case 'f':
 				foreground = 1;
@@ -929,6 +925,11 @@ int main (int argc, char **argv) {
 				/* Save command to execute */
 				strncpy(exec_command, optarg, sizeof(exec_command) - 1);
 				exec_command[sizeof(exec_command) - 1] = '\0';
+				break;
+
+			case 'o':
+				/* Enable legacy username/password authentication mode */
+				auth_mode = 1;
 				break;
 
 			case 'v':
@@ -964,7 +965,7 @@ int main (int argc, char **argv) {
 
 	if (print_help) {
 		print_version();
-		fprintf(stderr, "Usage: %s [-v] [-h] [-n] [-f] [-S] [-P <port>] [-U <user>] [-c <command>]\n", argv[0]);
+		fprintf(stderr, "Usage: %s [-v] [-h] [-n] [-f] [-o] [-S] [-P <port>] [-U <user>] [-c <command>]\n", argv[0]);
 		fprintf(stderr, "\nParameters:\n"
 				"  -f         Run process in foreground.\n"
 				"  -n         Do not use broadcast packets. Just a tad less insecure.\n"
@@ -975,9 +976,12 @@ int main (int argc, char **argv) {
 				"  -U <user>  Drop privileges by switching to user, when the command is\n"
 				"             run as a privileged user in conjunction with the -n option.\n"
 				"             Standard MAC-Telnet is not compatible with this option.\n"
-				"  -c <cmd>   Execute specified command instead of user's shell after login.\n"
-				"             No authentication required when this option is set.\n"
-				"             The client will interact directly with the command.\n"
+				"  -c <cmd>   Execute specified command upon connection (default: /bin/login).\n"
+				"             No authentication is performed by mactelnetd itself;\n"
+				"             the client interacts directly with the command.\n"
+				"  -o         Enable legacy username/password authentication mode.\n"
+				"             Server validates credentials against /etc/mactelnetd.users\n"
+				"             then spawns the user's shell. Client must also use -o.\n"
 				"  -i <iface> Listen on given interface.\n"
 				"  -v         Print version and exit.\n"
 				"  -h         Print help and exit.\n"
@@ -995,8 +999,8 @@ int main (int argc, char **argv) {
 		return 1;
 	}
 
-	/* Try to read user file */
-	if (!tunnel_conn && exec_command[0] == '\0') {
+	/* In auth_mode, read user file for credential validation */
+	if (!tunnel_conn && auth_mode) {
 		read_userfile();
 	}
 
