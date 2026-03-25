@@ -819,7 +819,7 @@ int main (int argc, char **argv) {
 
 	/* Set up global info about the connection */
 	inet_pton(AF_INET, (char *)"255.255.255.255", &destip);
-	memcpy(&sourceip, &(si_me.sin_addr), IPV4_ALEN);
+	/* sourceip will be set from active_interface after find_interface() */
 
 	/* Session key */
 	sessionkey = rand() % 65535;
@@ -846,6 +846,8 @@ int main (int argc, char **argv) {
 		fprintf(stderr, "Connection failed.\n");
 		return 1;
 	}
+	/* Set source IP from the active interface chosen by find_interface() */
+	sourceip = active_interface->ipv4_addr;
 	if (!quiet_mode) {
 		printf("done\n");
 	}
