@@ -210,18 +210,43 @@ int net_send_udp(const int fd, struct net_interface *interface, const struct eth
 	return send_result - 8 - 14 - 20;
 }
 
-int net_recv_packet(int fd, struct mt_mactelnet_hdr *h, struct sockaddr_in *s)
+int net_recv_packet(int fd, struct mt_mactelnet_hdr *h, struct sockaddr_in *s, int *ifindex)
 {
 	int result;
-	uint32_t slen = s ? sizeof(*s) : 0;
+	struct iovec iov = { packetbuf, sizeof(packetbuf) };
+	uint8_t cmsgbuf[CMSG_SPACE(sizeof(struct in_pktinfo))];
+	struct msghdr msg = { };
+	struct cmsghdr *cmsg;
 
 	memset(packetbuf, 0, sizeof(packetbuf));
 
-	result = recvfrom(fd, packetbuf, sizeof(packetbuf), 0,
-	                  (struct sockaddr *)s, &slen);
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_control = cmsgbuf;
+	msg.msg_controllen = sizeof(cmsgbuf);
 
-	if (result > 0 && h)
-		parse_packet(packetbuf, h);
+	if (s) {
+		msg.msg_name = s;
+		msg.msg_namelen = sizeof(*s);
+	}
+
+	result = recvmsg(fd, &msg, 0);
+
+	if (result > 0) {
+		if (h)
+			parse_packet(packetbuf, h);
+
+		if (ifindex) {
+			*ifindex = 0;
+			for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+				if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO) {
+					struct in_pktinfo *pi = (struct in_pktinfo *)CMSG_DATA(cmsg);
+					*ifindex = pi->ipi_ifindex;
+					break;
+				}
+			}
+		}
+	}
 
 	return result;
 }
@@ -330,6 +355,18 @@ net_ifaces_lookup(const struct ether_addr *mac)
 
 	list_for_each_entry(iface, &ifaces, list)
 		if (!memcmp(&iface->mac_addr, mac, sizeof(iface->mac_addr)))
+			return iface;
+
+	return NULL;
+}
+
+struct net_interface *
+net_ifaces_lookup_by_ifindex(int ifindex)
+{
+	struct net_interface *iface;
+
+	list_for_each_entry(iface, &ifaces, list)
+		if (iface->ifindex == ifindex)
 			return iface;
 
 	return NULL;

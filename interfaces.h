@@ -47,11 +47,12 @@ extern struct list_head ifaces;
 void net_ifaces_init(void);
 struct net_interface *net_ifaces_add(const char *ifname);
 struct net_interface *net_ifaces_lookup(const struct ether_addr *mac);
+struct net_interface *net_ifaces_lookup_by_ifindex(int ifindex);
 void net_ifaces_finish(void);
 void net_ifaces_all(void);
 void net_ifaces_add_all(void);
 void net_ifaces_refresh(void);
 
-int net_recv_packet(int fd, struct mt_mactelnet_hdr *h, struct sockaddr_in *s);
+int net_recv_packet(int fd, struct mt_mactelnet_hdr *h, struct sockaddr_in *s, int *ifindex);
 
 #endif

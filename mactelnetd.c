@@ -584,13 +584,20 @@ require_ssh:
 static void recv_bulk(struct uloop_fd *ufd, uint32_t ev);
 static void timeout_session(struct uloop_timeout *utm);
 
-static void handle_packet(struct mt_mactelnet_hdr *pkt, struct sockaddr_in *src, int data_len) {
+static void handle_packet(struct mt_mactelnet_hdr *pkt, struct sockaddr_in *src, int data_len, int ifindex) {
 	struct mt_connection *curconn = NULL;
 	struct mt_packet pdata;
 	struct net_interface *iface;
 
+	/* Look up interface by ifindex first (accurate for same-MAC interfaces),
+	 * fall back to MAC address lookup if ifindex is not available. */
+	if (ifindex > 0)
+		iface = net_ifaces_lookup_by_ifindex(ifindex);
+	else
+		iface = net_ifaces_lookup(&pkt->dstaddr);
+
 	/* Drop packets not belonging to us */
-	if ((iface = net_ifaces_lookup(&pkt->dstaddr)) == NULL)
+	if (iface == NULL)
 		return;
 
 	switch (pkt->ptype)
@@ -605,7 +612,7 @@ static void handle_packet(struct mt_mactelnet_hdr *pkt, struct sockaddr_in *src,
 			break;
 
 		case MT_PTYPE_SESSIONSTART:
-			syslog(LOG_DEBUG, "(%d) New connection from %s.", pkt->seskey, ether_ntoa((struct ether_addr*)&(pkt->srcaddr)));
+			syslog(LOG_DEBUG, "(%d) New connection from %s on %s.", pkt->seskey, ether_ntoa((struct ether_addr*)&(pkt->srcaddr)), iface->name);
 
 			curconn = calloc(1, sizeof(*curconn));
 			if (!curconn)
@@ -819,18 +826,19 @@ static void recv_telnet(struct uloop_fd *ufd, uint32_t ev)
 {
 	struct sockaddr_in src = { };
 	struct mt_mactelnet_hdr hdr = { };
+	int ifindex = 0;
 
-	int len = net_recv_packet(ufd->fd, &hdr, &src);
+	int len = net_recv_packet(ufd->fd, &hdr, &src, &ifindex);
 
 	if (len <= 0)
 		return;
 
-	handle_packet(&hdr, &src, len);
+	handle_packet(&hdr, &src, len, ifindex);
 }
 
 static void recv_mndp(struct uloop_fd *ufd, uint32_t ev)
 {
-	int len = net_recv_packet(ufd->fd, NULL, NULL);
+	int len = net_recv_packet(ufd->fd, NULL, NULL, NULL);
 
 	if (len != 4)
 		return;
@@ -1047,7 +1055,11 @@ int main (int argc, char **argv) {
 		fprintf(stderr, "Error binding to 0.0.0.0:%s, %s\n", port, strerror(errno));
 		return 1;
 	} else {
+		int opt = 1;
 		syslog(LOG_NOTICE, "Bound to 0.0.0.0:%s", port);
+		/* Enable IP_PKTINFO to know on which interface each packet arrived */
+		if (setsockopt(insock.fd, IPPROTO_IP, IP_PKTINFO, &opt, sizeof(opt)) < 0)
+			syslog(LOG_WARNING, "setsockopt IP_PKTINFO: %s", strerror(errno));
 	}
 
 	/* Receive mndp udp packets with this socket */
